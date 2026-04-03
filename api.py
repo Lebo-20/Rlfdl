@@ -53,8 +53,10 @@ async def get_drama_detail(book_id: str, lang="in"):
             # ReeLife drama detail might be the 'data' field or the root if it's the direct book object
             # Based on the provided example, the response code 0 indicates success
             if data and data.get("code") == 0:
-                # The actual book data might be in 'data'
-                return data.get("data") or data
+                inner_data = data.get("data") or data
+                if isinstance(inner_data, dict) and "bookVo" in inner_data:
+                    return inner_data["bookVo"]
+                return inner_data
             return None
         except Exception as e:
             logger.error(f"Error fetching drama detail for {book_id}: {e}")

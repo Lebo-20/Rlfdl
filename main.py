@@ -125,9 +125,8 @@ async def on_search(event):
         return
         
     buttons = []
-    # Show top 5-10 results
     for res in results[:20]:
-        title = res.get("bookName") or res.get("title") or res.get("name")
+        title = res.get("bookName") or res.get("title") or res.get("name") or res.get("book_name")
         book_id = res.get("bookId") or res.get("id")
         if title and book_id:
             buttons.append([Button.inline(f"🎬 {title}", f"dl_{book_id}".encode())])
@@ -179,7 +178,7 @@ async def on_download(event):
             await wait_msg.edit(f"❌ Drama `{query}` tidak ditemukan.")
             return
         book_id = results[0].get("bookId") or results[0].get("id")
-        title = results[0].get("bookName") or results[0].get("title")
+        title = results[0].get("bookName") or results[0].get("title") or results[0].get("name")
         await wait_msg.edit(f"✅ Ditemukan: **{title}** (ID: `{book_id}`)")
     
     # 1. Fetch data
@@ -212,9 +211,9 @@ async def process_drama_full(book_id, chat_id, status_msg=None):
         if status_msg: await status_msg.edit(f"❌ Detail atau Episode `{book_id}` tidak ditemukan.")
         return False
 
-    title = detail.get("bookName") or detail.get("title") or f"Drama_{book_id}"
-    description = detail.get("introduction") or detail.get("intro") or "No description available."
-    poster = detail.get("coverWap") or detail.get("cover") or ""
+    title = detail.get("bookName") or detail.get("title") or detail.get("name") or f"Drama_{book_id}"
+    description = detail.get("introduction") or detail.get("intro") or detail.get("summary") or "No description available."
+    poster = detail.get("coverWap") or detail.get("cover") or detail.get("cover_url") or detail.get("bookCover") or ""
     
     # 2. Setup temp directory
     temp_dir = tempfile.mkdtemp(prefix=f"melolo_{book_id}_")
@@ -300,7 +299,7 @@ async def auto_mode_loop():
                     
                 if book_id not in processed_ids:
                     new_found += 1
-                    title = drama.get("bookName") or drama.get("title") or "Unknown"
+                    title = drama.get("bookName") or drama.get("title") or drama.get("name") or "Unknown"
                     logger.info(f"✨ [REELIFE] New drama: {title} ({book_id}). Starting process...")
                     
                     # Notify admin
