@@ -212,6 +212,11 @@ async def process_drama_full(book_id, chat_id, status_msg=None, initial_title=No
         return False
 
     title = detail.get("bookName") or detail.get("title") or detail.get("name") or initial_title or f"Drama_{book_id}"
+    if title == f"Drama_{book_id}":
+        logger.warning(f"⚠️ Title not found in detail for {book_id}. Full response keys: {list(detail.keys()) if isinstance(detail, dict) else 'Not a dict'}")
+        # Log the full detail for debugging if needed (careful with large logs)
+        # logger.debug(f"FULL DETAIL: {detail}")
+
     description = detail.get("introduction") or detail.get("intro") or detail.get("summary") or "No description available."
     poster = detail.get("coverWap") or detail.get("cover") or detail.get("cover_url") or detail.get("bookCover") or ""
     
