@@ -39,25 +39,26 @@ async def download_all_episodes(episodes, download_dir: str, semaphore_count: in
     
     async def limited_download(ep):
         async with semaphore:
-            ep_num = str(ep.get('episode', 'unk')).zfill(3)
+            ep_num = str(ep.get('chapterId', 'unk')).zfill(3)
             filename = f"episode_{ep_num}.mp4"
             filepath = os.path.join(download_dir, filename)
             
             # If already exists (maybe from previous attempt), skip?
             # Actually better to redownload to be safe if we are retrying the whole drama
             
-            vid = ep.get('vid')
-            if not vid:
-                logger.error(f"No Video ID found for episode {ep_num}")
+            book_id = ep.get('bookId')
+            chapter_id = ep.get('chapterId')
+            if not book_id or not chapter_id:
+                logger.error(f"No Book ID or Chapter ID found for episode {ep_num}")
                 return False
                 
             max_retries = 3
             for attempt in range(max_retries):
                 try:
-                    # Fetch URL from vid (fresh URL for each attempt since they might expire)
-                    url = await get_video_url(vid)
+                    # Fetch URL from bookId and chapterId
+                    url = await get_video_url(book_id, chapter_id)
                     if not url:
-                        logger.error(f"No URL found for vid {vid} (Episode {ep_num}) - Attempt {attempt+1}")
+                        logger.error(f"No URL found for {book_id}/{chapter_id} (Episode {ep_num}) - Attempt {attempt+1}")
                         if attempt < max_retries - 1:
                             await asyncio.sleep(2)
                             continue

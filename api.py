@@ -3,65 +3,58 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-BASE_URL = "https://melolo.dramabos.my.id/api"
+BASE_URL = "https://reelife.dramabos.my.id/api/v1"
 AUTH_CODE = "A8D6AB170F7B89F2182561D3B32F390D"
 
-async def get_latest_dramas(pages=1, offset=0):
-    """Fetches trending dramas from Melolo API home section."""
+async def get_latest_dramas(pages=1, page_start=1, lang="in"):
+    """Fetches latest dramas from ReeLife API home section."""
     all_dramas = []
     
     async with httpx.AsyncClient(timeout=30) as client:
-        current_offset = offset
-        for p in range(pages):
+        for p in range(page_start, page_start + pages):
             url = f"{BASE_URL}/home"
             params = {
-                "lang": "id",
-                "offset": current_offset
+                "lang": lang,
+                "page": p
             }
             try:
                 response = await client.get(url, params=params)
                 if response.status_code == 200:
                     data = response.json()
-                    # Melolo structure: data.cell.cell_data -> list of sections -> each has 'books'
-                    cell_data = data.get("data", {}).get("cell", {}).get("cell_data", [])
-                    if not cell_data:
+                    # ReeLife structure: data has 'dramas' list
+                    dramas = data.get("dramas", [])
+                    if not dramas:
                         break
-                    
-                    found_in_page = []
-                    for section in cell_data:
-                        books = section.get("books", [])
-                        found_in_page.extend(books)
-                    
-                    if not found_in_page:
+                    all_dramas.extend(dramas)
+                    if not data.get("hasMore", False):
                         break
-                        
-                    all_dramas.extend(found_in_page)
-                    # Use next_offset from response if available
-                    current_offset = data.get("data", {}).get("next_offset", current_offset + 18)
                 else:
                     break
             except Exception as e:
-                logger.error(f"Error fetching home offset {current_offset}: {e}")
+                logger.error(f"Error fetching home page {p}: {e}")
                 break
     
     return all_dramas
 
-# Compatibility alias for old sources
+# Compatibility alias
 async def get_latest_idramas(pages=1):
     return await get_latest_dramas(pages=pages)
 
-async def get_drama_detail(book_id: str):
-    """Fetches drama detail from Melolo API."""
-    url = f"{BASE_URL}/detail/{book_id}"
-    params = {"lang": "id"}
+async def get_drama_detail(book_id: str, lang="in"):
+    """Fetches drama detail from ReeLife API."""
+    url = f"{BASE_URL}/book/{book_id}"
+    params = {"lang": lang}
     
     async with httpx.AsyncClient(timeout=30) as client:
         try:
             response = await client.get(url, params=params)
             response.raise_for_status()
             data = response.json()
+            # ReeLife drama detail might be the 'data' field or the root if it's the direct book object
+            # Based on the provided example, the response code 0 indicates success
             if data and data.get("code") == 0:
-                return data
+                # The actual book data might be in 'data'
+                return data.get("data") or data
             return None
         except Exception as e:
             logger.error(f"Error fetching drama detail for {book_id}: {e}")
@@ -71,23 +64,37 @@ async def get_drama_detail(book_id: str):
 async def get_idrama_detail(book_id: str):
     return await get_drama_detail(book_id)
 
-async def get_all_episodes(book_id: str):
-    """Fetches episodes list from drama detail."""
-    detail = await get_drama_detail(book_id)
-    if detail and "videos" in detail:
-        return detail["videos"]
-    return []
+async def get_all_episodes(book_id: str, lang="in"):
+    """Fetches episodes list (chapters) from ReeLife API."""
+    url = f"{BASE_URL}/book/{book_id}/chapters"
+    params = {"lang": lang}
+    
+    async with httpx.AsyncClient(timeout=30) as client:
+        try:
+            response = await client.get(url, params=params)
+            response.raise_for_status()
+            data = response.json()
+            if data and data.get("code") == 0:
+                # Based on observation, chapters are in data['data']['chapterList']
+                inner_data = data.get("data", {})
+                if isinstance(inner_data, dict):
+                    return inner_data.get("chapterList", [])
+            return []
+        except Exception as e:
+            logger.error(f"Error fetching episodes for {book_id}: {e}")
+            return []
 
 # Compatibility alias
 async def get_idrama_all_episodes(book_id: str):
     return await get_all_episodes(book_id)
 
-async def search_dramas(query: str):
+async def search_dramas(query: str, page=1, lang="in"):
     """Searches dramas by title."""
     url = f"{BASE_URL}/search"
     params = {
-        "lang": "id",
-        "q": query
+        "lang": lang,
+        "q": query,
+        "page": page
     }
     async with httpx.AsyncClient(timeout=30) as client:
         try:
@@ -95,19 +102,18 @@ async def search_dramas(query: str):
             response.raise_for_status()
             data = response.json()
             if data and data.get("code") == 0:
-                # Search structure: data has 'data' which is list of books?
-                # Looking at my test: {"code":0,"count":33,"data":[...]}
-                return data.get("data", [])
+                # Search structure: usually data has 'dramas' or similar
+                return data.get("dramas", []) or data.get("data", [])
             return []
         except Exception as e:
             logger.error(f"Error searching for {query}: {e}")
             return []
 
-async def get_video_url(vid: str):
-    """Fetches the actual play URL for a video ID."""
-    url = f"{BASE_URL}/video/{vid}"
+async def get_video_url(book_id: str, chapter_id: str, lang="in"):
+    """Fetches the actual play URL for a specific chapter."""
+    url = f"{BASE_URL}/play/{book_id}/{chapter_id}"
     params = {
-        "lang": "id",
+        "lang": lang,
         "code": AUTH_CODE
     }
     async with httpx.AsyncClient(timeout=30) as client:
@@ -115,8 +121,8 @@ async def get_video_url(vid: str):
             response = await client.get(url, params=params)
             response.raise_for_status()
             data = response.json()
-            # Response: {"backup": "...", "url": "..."}
-            return data.get("url") or data.get("backup")
+            # Response: {"videoUrl": "..."}
+            return data.get("videoUrl") or data.get("url")
         except Exception as e:
-            logger.error(f"Error fetching video URL for {vid}: {e}")
+            logger.error(f"Error fetching video URL for {book_id}/{chapter_id}: {e}")
             return None

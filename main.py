@@ -112,13 +112,11 @@ async def panel_callback(event):
 
 @client.on(events.NewMessage(pattern='/start'))
 async def start(event):
-    await event.reply("Welcome to Dramabox Downloader Bot! 🎉\n\nGunakan perintah\n`/download {bookId}`\n`/download {title}`\n`/search {judul}`\nuntuk mulai.")
+    await event.reply("Welcome to Reelife Downloader Bot! 🎉\n\nGunakan perintah\n`/download {bookId}`\n`/download {title}`\n`/cari {judul}` atau `/search {judul}`\nuntuk mencari dan mengunduh drama.")
 
-@client.on(events.NewMessage(pattern=r'/search (.+)'))
+@client.on(events.NewMessage(pattern=r'/(search|cari)\s+(.+)'))
 async def on_search(event):
-    if event.chat_id != ADMIN_ID:
-        return
-    query = event.pattern_match.group(1)
+    query = event.pattern_match.group(2)
     status_msg = await event.reply(f"🔍 Mencari `{query}`...")
     
     results = await search_dramas(query)
@@ -128,29 +126,31 @@ async def on_search(event):
         
     buttons = []
     # Show top 5-10 results
-    for res in results[:8]:
-        title = res.get("book_name") or res.get("title")
-        book_id = res.get("book_id") or res.get("id")
+    for res in results[:20]:
+        title = res.get("bookName") or res.get("title") or res.get("name")
+        book_id = res.get("bookId") or res.get("id")
         if title and book_id:
             buttons.append([Button.inline(f"🎬 {title}", f"dl_{book_id}".encode())])
             
-    await status_msg.edit(f"✅ Ditemukan {len(results)} drama untuk `{query}`:", buttons=buttons)
+    if not buttons:
+        await status_msg.edit(f"❌ Hasil untuk `{query}` tidak memiliki ID drama.")
+        return
+
+    await status_msg.edit(f"✅ Ditemukan drama untuk `{query}`:", buttons=buttons)
 
 @client.on(events.CallbackQuery(pattern=r'^dl_(.+)'))
 async def dl_callback(event):
-    if event.sender_id != ADMIN_ID:
-        return
     book_id = event.pattern_match.group(1).decode()
     
     if BotState.is_processing:
-        await event.answer("⚠️ Bot sedang sibuk!", alert=True)
+        await event.answer("⚠️ Bot sedang sibuk (sedang proses drama lain)!", alert=True)
         return
         
     await event.answer("Mulai memproses...")
-    status_msg = await client.send_message(ADMIN_ID, f"⏳ Memulai download drama ID: `{book_id}`...")
+    status_msg = await event.reply(f"⏳ Memulai download drama ID: `{book_id}`...")
     
     BotState.is_processing = True
-    success = await process_drama_full(book_id, AUTO_CHANNEL, status_msg)
+    success = await process_drama_full(book_id, event.chat_id, status_msg)
     if success:
         processed_ids.add(book_id)
         save_processed(processed_ids)
@@ -160,10 +160,6 @@ async def dl_callback(event):
 async def on_download(event):
     chat_id = event.chat_id
     
-    if chat_id != ADMIN_ID:
-        await event.reply("❌ Maaf, perintah ini hanya untuk admin.")
-        return
-        
     if BotState.is_processing:
         await event.reply("⚠️ Sedang memproses drama lain. Tunggu hingga selesai.")
         return
@@ -171,20 +167,20 @@ async def on_download(event):
     query = event.pattern_match.group(1)
     book_id = None
     
-    # Check if it looks like an ID (long numeric string)
-    if query.isdigit() and len(query) > 10:
+    # Check if it looks like an ID (numeric string)
+    if query.isdigit() and len(query) >= 10:
         book_id = query
         logger.info(f"Direct ID download: {book_id}")
     else:
         # It's a title, search for it
-        await event.reply(f"🔍 Mencari `{query}` untuk didownload...")
+        wait_msg = await event.reply(f"🔍 Mencari `{query}` untuk didownload...")
         results = await search_dramas(query)
         if not results:
-            await event.reply(f"❌ Drama `{query}` tidak ditemukan.")
+            await wait_msg.edit(f"❌ Drama `{query}` tidak ditemukan.")
             return
-        book_id = results[0].get("book_id") or results[0].get("id")
-        title = results[0].get("book_name") or results[0].get("title")
-        await event.reply(f"✅ Ditemukan: **{title}** (ID: `{book_id}`)")
+        book_id = results[0].get("bookId") or results[0].get("id")
+        title = results[0].get("bookName") or results[0].get("title")
+        await wait_msg.edit(f"✅ Ditemukan: **{title}** (ID: `{book_id}`)")
     
     # 1. Fetch data
     detail = await get_drama_detail(book_id)
@@ -197,7 +193,7 @@ async def on_download(event):
         await event.reply(f"❌ Drama `{book_id}` tidak memiliki episode.")
         return
     
-    title = detail.get("title") or detail.get("book_name") or detail.get("name") or f"Drama_{book_id}"
+    title = detail.get("bookName") or detail.get("title") or f"Drama_{book_id}"
     status_msg = await event.reply(f"🎬 Drama: **{title}**\n📽 Total Episodes: {len(episodes)}\n\n⏳ Sedang memproses...")
     
     BotState.is_processing = True
@@ -216,9 +212,9 @@ async def process_drama_full(book_id, chat_id, status_msg=None):
         if status_msg: await status_msg.edit(f"❌ Detail atau Episode `{book_id}` tidak ditemukan.")
         return False
 
-    title = detail.get("title") or detail.get("book_name") or f"Drama_{book_id}"
-    description = detail.get("intro") or "No description available."
-    poster = detail.get("cover") or ""
+    title = detail.get("bookName") or detail.get("title") or f"Drama_{book_id}"
+    description = detail.get("introduction") or detail.get("intro") or "No description available."
+    poster = detail.get("coverWap") or detail.get("cover") or ""
     
     # 2. Setup temp directory
     temp_dir = tempfile.mkdtemp(prefix=f"melolo_{book_id}_")
@@ -269,7 +265,7 @@ async def auto_mode_loop():
     """Loop to find and process new dramas automatically using Melolo home feed."""
     global processed_ids
     
-    logger.info("🚀 Melolo Auto-Mode Started.")
+    logger.info("🚀 ReeLife Auto-Mode Started.")
     
     is_initial_run = True
     
@@ -298,18 +294,18 @@ async def auto_mode_loop():
                 if not BotState.is_auto_running:
                     break
                     
-                book_id = str(drama.get("book_id") or drama.get("id", ""))
+                book_id = str(drama.get("bookId") or drama.get("id", ""))
                 if not book_id:
                     continue
                     
                 if book_id not in processed_ids:
                     new_found += 1
-                    title = drama.get("book_name") or drama.get("title") or "Unknown"
-                    logger.info(f"✨ [MELOLO] New drama: {title} ({book_id}). Starting process...")
+                    title = drama.get("bookName") or drama.get("title") or "Unknown"
+                    logger.info(f"✨ [REELIFE] New drama: {title} ({book_id}). Starting process...")
                     
                     # Notify admin
                     try:
-                        await client.send_message(ADMIN_ID, f"🆕 **Auto-System Mendeteksi Drama Baru!**\n🎬 `[MELOLO] {title}`\n🆔 `{book_id}`\n⏳ Memproses download & merge...")
+                        await client.send_message(ADMIN_ID, f"🆕 **Auto-System Mendeteksi Drama Baru!**\n🎬 `[REELIFE] {title}`\n🆔 `{book_id}`\n⏳ Memproses download & merge...")
                     except: pass
                     
                     BotState.is_processing = True
