@@ -351,6 +351,7 @@ async def auto_mode_loop():
 if __name__ == '__main__':
     logger.info("Initializing Dramabox Auto-Bot...")
     
+    client.start(bot_token=BOT_TOKEN)
     with client:
         # Start auto loop and keep the client running
         client.loop.create_task(auto_mode_loop())
