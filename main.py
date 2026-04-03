@@ -196,13 +196,13 @@ async def on_download(event):
     status_msg = await event.reply(f"🎬 Drama: **{title}**\n📽 Total Episodes: {len(episodes)}\n\n⏳ Sedang memproses...")
     
     BotState.is_processing = True
-    success = await process_drama_full(book_id, chat_id, status_msg)
+    success = await process_drama_full(book_id, chat_id, status_msg, initial_title=title)
     if success:
         processed_ids.add(book_id)
         save_processed(processed_ids)
     BotState.is_processing = False
 
-async def process_drama_full(book_id, chat_id, status_msg=None):
+async def process_drama_full(book_id, chat_id, status_msg=None, initial_title=None):
     """Refactored logic to be reusable for auto-mode and support Melolo API."""
     detail = await get_drama_detail(book_id)
     episodes = await get_all_episodes(book_id)
@@ -211,7 +211,7 @@ async def process_drama_full(book_id, chat_id, status_msg=None):
         if status_msg: await status_msg.edit(f"❌ Detail atau Episode `{book_id}` tidak ditemukan.")
         return False
 
-    title = detail.get("bookName") or detail.get("title") or detail.get("name") or f"Drama_{book_id}"
+    title = detail.get("bookName") or detail.get("title") or detail.get("name") or initial_title or f"Drama_{book_id}"
     description = detail.get("introduction") or detail.get("intro") or detail.get("summary") or "No description available."
     poster = detail.get("coverWap") or detail.get("cover") or detail.get("cover_url") or detail.get("bookCover") or ""
     
@@ -308,8 +308,8 @@ async def auto_mode_loop():
                     except: pass
                     
                     BotState.is_processing = True
-                    # Process to target channel
-                    success = await process_drama_full(book_id, AUTO_CHANNEL)
+                    # Process to target channel with title fallback
+                    success = await process_drama_full(book_id, AUTO_CHANNEL, initial_title=title)
                     BotState.is_processing = False
                     
                     if success:
