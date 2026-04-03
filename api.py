@@ -21,8 +21,11 @@ async def get_latest_dramas(pages=1, page_start=1, lang="in"):
                 response = await client.get(url, params=params)
                 if response.status_code == 200:
                     data = response.json()
-                    # ReeLife structure: data has 'dramas' list
-                    dramas = data.get("dramas", [])
+                    # Support both Reelife (data['dramas']) and common structures
+                    dramas = data.get("dramas") or data.get("data", []) if not isinstance(data.get("data"), dict) else data.get("data", {}).get("dramas", [])
+                    if not dramas and isinstance(data.get("data"), list):
+                        dramas = data.get("data")
+                    
                     if not dramas:
                         break
                     all_dramas.extend(dramas)
@@ -52,7 +55,7 @@ async def get_drama_detail(book_id: str, lang="in"):
             data = response.json()
             # ReeLife drama detail might be the 'data' field or the root if it's the direct book object
             # Based on the provided example, the response code 0 indicates success
-            if data and data.get("code") == 0:
+            if data and (data.get("code") == 0 or "data" in data or "bookVo" in data):
                 inner_data = data.get("data") or data
                 if isinstance(inner_data, dict) and "bookVo" in inner_data:
                     return inner_data["bookVo"]
@@ -76,11 +79,14 @@ async def get_all_episodes(book_id: str, lang="in"):
             response = await client.get(url, params=params)
             response.raise_for_status()
             data = response.json()
-            if data and data.get("code") == 0:
-                # Based on observation, chapters are in data['data']['chapterList']
-                inner_data = data.get("data", {})
+            if data and (data.get("code") == 0 or "data" in data):
+                # Based on observation, chapters are in data['data']['chapterList'] 
+                # or just data['list'] or data['episodes']
+                inner_data = data.get("data") or data
                 if isinstance(inner_data, dict):
-                    return inner_data.get("chapterList", [])
+                    return inner_data.get("chapterList") or inner_data.get("list") or inner_data.get("episodes") or []
+                elif isinstance(inner_data, list):
+                    return inner_data
             return []
         except Exception as e:
             logger.error(f"Error fetching episodes for {book_id}: {e}")
@@ -103,9 +109,9 @@ async def search_dramas(query: str, page=1, lang="in"):
             response = await client.get(url, params=params)
             response.raise_for_status()
             data = response.json()
-            if data and data.get("code") == 0:
+            if data and (data.get("code") == 0 or "dramas" in data or "data" in data):
                 # Search structure: usually data has 'dramas' or similar
-                return data.get("dramas", []) or data.get("data", [])
+                return data.get("dramas") or data.get("data") or []
             return []
         except Exception as e:
             logger.error(f"Error searching for {query}: {e}")
