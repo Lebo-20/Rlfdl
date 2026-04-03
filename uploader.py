@@ -31,24 +31,28 @@ async def upload_drama(client: TelegramClient, chat_id: int,
         # Download poster to temp file first so Telethon sends it as photo
         import httpx
         poster_path = None
-        try:
-            async with httpx.AsyncClient(timeout=30) as http_client:
-                resp = await http_client.get(poster_url)
-                if resp.status_code == 200:
-                    poster_path = os.path.join(tempfile.gettempdir(), f"poster_{title[:20].replace(' ','_')}.jpg")
-                    with open(poster_path, "wb") as pf:
-                        pf.write(resp.content)
-        except Exception as e:
-            logger.warning(f"Failed to download poster: {e}")
+        if poster_url and poster_url.startswith("http"):
+            try:
+                async with httpx.AsyncClient(timeout=30) as http_client:
+                    resp = await http_client.get(poster_url)
+                    if resp.status_code == 200:
+                        poster_path = os.path.join(tempfile.gettempdir(), f"poster_{title[:20].replace(' ','_')}.jpg")
+                        with open(poster_path, "wb") as pf:
+                            pf.write(resp.content)
+            except Exception as e:
+                logger.warning(f"Failed to download poster: {e}")
         
-        # Send as visible photo
-        await client.send_file(
-            chat_id,
-            poster_path or poster_url,
-            caption=caption,
-            parse_mode='md',
-            force_document=False  # Force as PHOTO, not file
-        )
+        # Send as visible photo if possible, or just text if no image
+        if poster_path or (poster_url and poster_url.startswith("http")):
+            await client.send_file(
+                chat_id,
+                poster_path or poster_url,
+                caption=caption,
+                parse_mode='md',
+                force_document=False  # Force as PHOTO
+            )
+        else:
+            await client.send_message(chat_id, caption, parse_mode='md')
         
         # Cleanup poster temp file
         if poster_path and os.path.exists(poster_path):
