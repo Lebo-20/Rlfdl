@@ -53,13 +53,27 @@ async def get_drama_detail(book_id: str, lang="in"):
             response = await client.get(url, params=params)
             response.raise_for_status()
             data = response.json()
-            # ReeLife drama detail might be the 'data' field or the root if it's the direct book object
-            # Based on the provided example, the response code 0 indicates success
-            if data and (data.get("code") == 0 or "data" in data or "bookVo" in data):
+            
+            if not data:
+                return None
+                
+            # Root level success check
+            if data.get("code") == 0 or "data" in data or "bookVo" in data:
+                # Logic to find the main drama object (often called bookVo)
                 inner_data = data.get("data") or data
-                if isinstance(inner_data, dict) and "bookVo" in inner_data:
-                    return inner_data["bookVo"]
-                return inner_data
+                
+                # If it's a dict containing bookVo, dive in
+                if isinstance(inner_data, dict):
+                    if "bookVo" in inner_data:
+                        return inner_data["bookVo"]
+                    # Fallback: if data itself has the fields
+                    if "bookName" in inner_data or "title" in inner_data or "name" in inner_data:
+                        return inner_data
+                
+                # Fallback: check root if it has the fields
+                if "bookName" in data or "title" in data:
+                    return data
+            
             return None
         except Exception as e:
             logger.error(f"Error fetching drama detail for {book_id}: {e}")
@@ -110,27 +124,39 @@ async def search_dramas(query: str, page=1, lang="in"):
             response.raise_for_status()
             data = response.json()
             if data and (data.get("code") == 0 or "dramas" in data or "data" in data):
-                # Search structure: usually data has 'dramas' or similar
-                return data.get("dramas") or data.get("data") or []
+                inner_data = data.get("data") or data
+                if isinstance(inner_data, dict):
+                    return inner_data.get("dramas") or inner_data.get("list") or []
+                elif isinstance(inner_data, list):
+                    return inner_data
+                return data.get("dramas") or []
             return []
         except Exception as e:
             logger.error(f"Error searching for {query}: {e}")
             return []
 
 async def get_video_url(book_id: str, chapter_id: str, lang="in"):
-    """Fetches the actual play URL for a specific chapter."""
+    """Fetches the actual play URL for a specific chapter with retry logic."""
     url = f"{BASE_URL}/play/{book_id}/{chapter_id}"
     params = {
         "lang": lang,
         "code": AUTH_CODE
     }
-    async with httpx.AsyncClient(timeout=30) as client:
-        try:
-            response = await client.get(url, params=params)
-            response.raise_for_status()
-            data = response.json()
-            # Response: {"videoUrl": "..."}
-            return data.get("videoUrl") or data.get("url")
-        except Exception as e:
-            logger.error(f"Error fetching video URL for {book_id}/{chapter_id}: {e}")
-            return None
+    
+    async with httpx.AsyncClient(timeout=60) as client:
+        for attempt in range(3):
+            try:
+                response = await client.get(url, params=params)
+                response.raise_for_status()
+                data = response.json()
+                video_url = data.get("videoUrl") or data.get("url")
+                if video_url:
+                    return video_url
+                
+                # If success but no URL, wait and retry?
+                await asyncio.sleep(1)
+            except Exception as e:
+                if attempt == 2:
+                    logger.error(f"Error fetching video URL for {book_id}/{chapter_id}: {e}")
+                await asyncio.sleep(2)
+        return None

@@ -184,44 +184,57 @@ async def on_download(event):
     # 1. Fetch data
     detail = await get_drama_detail(book_id)
     if not detail:
-        await event.reply(f"❌ Gagal mendapatkan detail drama `{book_id}`.")
-        return
+        # One last attempt via search if the ID detail failed
+        search_alt = await search_dramas(book_id)
+        if search_alt:
+            detail = search_alt[0]
+        else:
+            await event.reply(f"❌ Gagal mendapatkan detail drama `{book_id}`.")
+            return
         
     episodes = await get_all_episodes(book_id)
     if not episodes:
         await event.reply(f"❌ Drama `{book_id}` tidak memiliki episode.")
         return
     
-    title = detail.get("bookName") or detail.get("title") or f"Drama_{book_id}"
+    title = detail.get("bookName") or detail.get("title") or detail.get("name") or f"Drama_{book_id}"
     status_msg = await event.reply(f"🎬 Drama: **{title}**\n📽 Total Episodes: {len(episodes)}\n\n⏳ Sedang memproses...")
     
     BotState.is_processing = True
-    success = await process_drama_full(book_id, chat_id, status_msg, initial_title=title)
+    success = await process_drama_full(book_id, chat_id, status_msg, initial_title=title, detail=detail, episodes=episodes)
     if success:
         processed_ids.add(book_id)
         save_processed(processed_ids)
     BotState.is_processing = False
 
-async def process_drama_full(book_id, chat_id, status_msg=None, initial_title=None):
-    """Refactored logic to be reusable for auto-mode and support Melolo API."""
-    detail = await get_drama_detail(book_id)
-    episodes = await get_all_episodes(book_id)
+async def process_drama_full(book_id, chat_id, status_msg=None, initial_title=None, detail=None, episodes=None):
+    """Refactored logic to be reusable for auto-mode and support ReeLife API."""
+    if not detail:
+        detail = await get_drama_detail(book_id)
+    if not episodes:
+        episodes = await get_all_episodes(book_id)
     
     if not detail or not episodes:
         if status_msg: await status_msg.edit(f"❌ Detail atau Episode `{book_id}` tidak ditemukan.")
         return False
 
     title = detail.get("bookName") or detail.get("title") or detail.get("name") or initial_title or f"Drama_{book_id}"
-    if title == f"Drama_{book_id}":
-        logger.warning(f"⚠️ Title not found in detail for {book_id}. Full response keys: {list(detail.keys()) if isinstance(detail, dict) else 'Not a dict'}")
-        # Log the full detail for debugging if needed (careful with large logs)
-        # logger.debug(f"FULL DETAIL: {detail}")
-
-    description = detail.get("introduction") or detail.get("intro") or detail.get("summary") or "No description available."
+    description = detail.get("introduction") or detail.get("intro") or detail.get("summary") or ""
     poster = detail.get("coverWap") or detail.get("cover") or detail.get("cover_url") or detail.get("bookCover") or ""
+
+    if not title or title.startswith("Drama_") or not description:
+        # If title or description is missing, check search
+        logger.info(f"🔍 Recovering metadata for {book_id} via search...")
+        search_data = await search_dramas(book_id)
+        if search_data:
+            best = search_data[0]
+            title = best.get("bookName") or best.get("title") or title
+            description = best.get("introduction") or best.get("intro") or description
+            poster = best.get("coverWap") or best.get("cover") or poster
+            logger.info(f"✅ Metadata recovered: {title}")
     
     # 2. Setup temp directory
-    temp_dir = tempfile.mkdtemp(prefix=f"melolo_{book_id}_")
+    temp_dir = tempfile.mkdtemp(prefix=f"reelife_{book_id}_")
     video_dir = os.path.join(temp_dir, "episodes")
     os.makedirs(video_dir, exist_ok=True)
     

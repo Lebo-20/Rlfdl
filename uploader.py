@@ -30,23 +30,28 @@ async def upload_drama(client: TelegramClient, chat_id: int,
         # 1. FINAL CONSISTENCY CHECK
         # Jika judul masih berupa ID default, ambil dari nama file video (video_path)
         filename_title = os.path.splitext(os.path.basename(video_path))[0]
-        # Clean title from ID fallback if filename is better
-        if title.startswith("Drama_") or not title or title == "Unknown":
-            if filename_title and not filename_title.startswith("Drama_") and filename_title != "Unknown":
+        
+        # Clean title if it's generic
+        if not title or title.lower().startswith("drama_") or title == "Unknown":
+            if filename_title and not filename_title.lower().startswith("drama_") and filename_title != "Unknown":
                 title = filename_title
-                logger.info(f"🔄 Judul diselaraskan dengan nama file: {title}")
+            else:
+                title = f"DRAMA ID {hash(video_path) % 100000}" # Better than literal ID? Maybe not.
+        
+        # Clean description
+        if not description or len(description.strip()) < 5:
+            description = "Informasi detail drama ini sedang diperbarui. Nantikan update film terbaru lainnya di channel ini!"
 
-        # Bersihkan deskripsi
-        if not description or "No description" in description:
-            description = "Sinopsis belum tersedia untuk drama ini."
-
-        # 2. Persiapkan Caption (Gunakan format Bold/Premium)
+        # 2. Persiapkan Caption PREMIUM
         caption = (
-            f"🎬 **{title.upper()}**\n\n"
-            f"📝 **Sinopsis:**\n"
-            f"_{description[:800] if description else 'No description available.'}_\n\n"
-            f"✅ **Kualitas:** Full HD 720p\n"
-            f"📌 **Status:** Full Episode"
+            f"🎬 **PREVIEW:** {title.upper()}\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"📝 **SINOPSIS:**\n"
+            f"_{description[:800]}_\n\n"
+            f"📽 **KUALITAS:** Full HD 720p\n"
+            f"📊 **STATUS:** Full Episodes\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"📥 *Unduh full drama di bawah ini!*"
         )
         
         # 3. Handle Poster
@@ -102,7 +107,7 @@ async def upload_drama(client: TelegramClient, chat_id: int,
         await client.send_file(
             chat_id,
             video_path,
-            caption=f"🎥 **VIDEO FULL:** {title}\n📌 Jangan lupa Subscribe!",
+            caption=f"📹 **VIDEO FULL :** {title}\n━━━━━━━━━━━━━━━━━━━━\n📌 *Dukung Kami dengan Cara Menonton & Berlangganan!*",
             force_document=False, # FORCE IT AS VIDEO STREAM
             thumb=thumb_path,
             attributes=video_attributes,

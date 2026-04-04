@@ -6,4 +6,9 @@ __pycache__/
 *.mp4
 episodes/
 test_bot.py
+test_*.py
+verify_*.py
 *.log
+api_response.json
+chapters_response.json
+search_response.json

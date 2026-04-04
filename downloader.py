@@ -27,24 +27,18 @@ async def download_file(client: httpx.AsyncClient, url: str, path: str, progress
 
 from api import get_video_url
 
-async def download_all_episodes(episodes, download_dir: str, semaphore_count: int = 5):
+async def download_all_episodes(episodes, download_dir: str, semaphore_count: int = 4):
     """
-    Downloads all episodes concurrently.
-    episodes: list of dicts with 'episode' and 'vid' for Melolo API
+    Downloads all episodes concurrently using a shared client for connection pooling.
     """
     os.makedirs(download_dir, exist_ok=True)
     semaphore = asyncio.Semaphore(semaphore_count)
 
-    tasks = []
-    
-    async def limited_download(ep):
+    async def limited_download(client: httpx.AsyncClient, ep):
         async with semaphore:
             ep_num = str(ep.get('chapterId', 'unk')).zfill(3)
             filename = f"episode_{ep_num}.mp4"
             filepath = os.path.join(download_dir, filename)
-            
-            # If already exists (maybe from previous attempt), skip?
-            # Actually better to redownload to be safe if we are retrying the whole drama
             
             book_id = ep.get('bookId')
             chapter_id = ep.get('chapterId')
@@ -52,34 +46,38 @@ async def download_all_episodes(episodes, download_dir: str, semaphore_count: in
                 logger.error(f"No Book ID or Chapter ID found for episode {ep_num}")
                 return False
                 
-            max_retries = 3
+            max_retries = 5 # Increased retries
             for attempt in range(max_retries):
                 try:
-                    # Fetch URL from bookId and chapterId
+                    # Fetch URL via API
                     url = await get_video_url(book_id, chapter_id)
                     if not url:
-                        logger.error(f"No URL found for {book_id}/{chapter_id} (Episode {ep_num}) - Attempt {attempt+1}")
-                        if attempt < max_retries - 1:
-                            await asyncio.sleep(2)
-                            continue
-                        return False
+                        logger.error(f"Waiting for URL for {book_id}/{chapter_id} (Attempt {attempt+1})")
+                        await asyncio.sleep(3 * (attempt + 1))
+                        continue
                         
-                    async with httpx.AsyncClient(timeout=120) as client:
-                        success = await download_file(client, url, filepath)
-                        if success:
-                            # Verify file size (sometimes it's a tiny HTML error page instead of video)
-                            if os.path.exists(filepath) and os.path.getsize(filepath) > 100000: # >100KB
-                                logger.info(f"Downloaded {filename}")
+                    success = await download_file(client, url, filepath)
+                    if success:
+                        # Verify file exists and has minimum size to be a valid video
+                        if os.path.exists(filepath):
+                            size = os.path.getsize(filepath)
+                            if size > 102400: # 100KB minimum
+                                logger.info(f"✅ Success Download: {filename} ({size/1024/1024:.2f}MB)")
                                 return True
                             else:
-                                logger.warning(f"File {filename} is too small, likely corrupted - Attempt {attempt+1}")
+                                logger.warning(f"⚠️ Episode {ep_num} is too small ({size} bytes). Retrying...")
+                    
                 except Exception as e:
-                    logger.error(f"Error downloading {filename} - Attempt {attempt+1}: {e}")
+                    logger.error(f"Error downloading episode {ep_num} (Attempt {attempt+1}): {e}")
                 
-                if attempt < max_retries - 1:
-                    await asyncio.sleep(5)
+                # Backoff before retry
+                wait_time = 5 * (attempt + 1)
+                await asyncio.sleep(wait_time)
             
+            logger.error(f"❌ Giving up on Episode {ep_num} after {max_retries} attempts.")
             return False
 
-    results = await asyncio.gather(*(limited_download(ep) for ep in episodes))
-    return all(results)
+    # Use a persistent client session for all downloads
+    async with httpx.AsyncClient(timeout=120, limits=httpx.Limits(max_connections=semaphore_count)) as client:
+        results = await asyncio.gather(*(limited_download(client, ep) for ep in episodes))
+        return all(results)
