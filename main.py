@@ -4,6 +4,7 @@ import logging
 import shutil
 import tempfile
 import random
+import re
 from telethon import TelegramClient, events, Button
 from dotenv import load_dotenv
 
@@ -26,6 +27,11 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 ADMIN_ID = int(os.environ.get("ADMIN_ID", "0"))
 AUTO_CHANNEL = int(os.environ.get("AUTO_CHANNEL", ADMIN_ID)) # Default post to admin
 PROCESSED_FILE = "processed.json"
+
+def sanitize_filename(filename):
+    """Removes or replaces characters that are illegal in Windows filenames."""
+    # Illegal characters: < > : " / \ | ? *
+    return re.sub(r'[<>:"/\\|?*]', '', filename).strip()
 
 # Initialize state
 def load_processed():
@@ -249,7 +255,8 @@ async def process_drama_full(book_id, chat_id, status_msg=None, initial_title=No
 
         # 4. Merge
         if status_msg: await status_msg.edit(f"📽 Merging {len(episodes)} episodes...")
-        output_video_path = os.path.join(temp_dir, f"{title}.mp4")
+        safe_title = sanitize_filename(title)
+        output_video_path = os.path.join(temp_dir, f"{safe_title}.mp4")
         merge_success = merge_episodes(video_dir, output_video_path)
         if not merge_success:
             if status_msg: await status_msg.edit(f"❌ Merge Gagal: **{title}**")

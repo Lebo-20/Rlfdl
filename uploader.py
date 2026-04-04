@@ -44,7 +44,7 @@ async def upload_drama(client: TelegramClient, chat_id: int,
 
         # 2. Persiapkan Caption PREMIUM
         caption = (
-            f"🎬 **PREVIEW:** {title.upper()}\n"
+            f"🎬 **{title.upper()}**\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"📝 **SINOPSIS:**\n"
             f"_{description[:800]}_\n\n"
@@ -107,7 +107,12 @@ async def upload_drama(client: TelegramClient, chat_id: int,
         await client.send_file(
             chat_id,
             video_path,
-            caption=f"📹 **VIDEO FULL :** {title}\n━━━━━━━━━━━━━━━━━━━━\n📌 *Dukung Kami dengan Cara Menonton & Berlangganan!*",
+            caption=(
+                f"📹 **{title.upper()}**\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"📥 *Silakan unduh dan bagikan video ini!*\n"
+                f"📌 *Dukung Kami dengan Cara Berlangganan!*"
+            ),
             force_document=False, # FORCE IT AS VIDEO STREAM
             thumb=thumb_path,
             attributes=video_attributes,
