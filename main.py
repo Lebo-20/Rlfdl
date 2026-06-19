@@ -299,7 +299,7 @@ async def auto_mode_loop():
             continue
             
         try:
-            interval = 5 if is_initial_run else 15 
+            interval = 5 if is_initial_run else 120 
             logger.info(f"🔍 Scanning for new dramas (Next scan in {interval}m)...")
             
             # Fetch trending from home
@@ -354,8 +354,9 @@ async def auto_mode_loop():
                         # But that might cause infinite error loops if it's a persistent error.
                         # Maybe just keep it in processed_ids to avoid spamming.
                     
-                    # Prevent hitting API/Telegram rate limits too hard
-                    await asyncio.sleep(10)
+                    # Cooldown 30 minutes after processing
+                    logger.info("💤 Auto-mode cooling down for 30 minutes...")
+                    await asyncio.sleep(30 * 60)
             
             if new_found == 0:
                 logger.info("😴 No new dramas found in this scan.")
